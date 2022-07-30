@@ -1,0 +1,55 @@
+
+exports[`sigl prop reducers 1`] = `"<div>0.2857142857142857</div>"`;
+
+exports[`sigl mixins 1`] = `"<div>100</div>"`;
+
+exports[`sigl mixins 2`] = `
+Array [
+  "foo",
+  "swimmable",
+  "runnable",
+]
+`;
+
+exports[`sigl serializing ref map 1`] = `
+"{
+  \\"$r\\": 1,
+  \\"$t\\": \\"Foo\\",
+  \\"$v\\": {
+    \\"bars\\": {
+      \\"$r\\": 2,
+      \\"$t\\": \\"RefMap\\",
+      \\"$v\\": [
+        {
+          \\"$r\\": 3,
+          \\"$t\\": \\"Array\\",
+          \\"$v\\": [
+            \\"foo\\",
+            {
+              \\"$r\\": 4,
+              \\"$t\\": \\"Object\\",
+              \\"$v\\": {
+                \\"value\\": 123
+              }
+            }
+          ]
+        },
+        {
+          \\"$r\\": 5,
+          \\"$t\\": \\"Array\\",
+          \\"$v\\": [
+            \\"bar\\",
+            {
+              \\"$r\\": 6,
+              \\"$t\\": \\"Object\\",
+              \\"$v\\": {
+                \\"value\\": 456
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}"
+`;
