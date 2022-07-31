@@ -5,6 +5,7 @@ import { EventKeys } from 'everyday-types'
 import * as sigl from './sigl'
 
 export * from 'everyday-types'
+export * from './element'
 
 const $ = Object.assign(sigl._, sigl, {
   String: String as unknown as string | undefined,
@@ -65,8 +66,6 @@ namespace $ {
   export type StateInstance = sigl.StateInstance
   export type Super<T = any, U = object> = sigl.Super<T, U>
   export type Task = sigl.Task
-  export type fromElement = typeof sigl.fromElement
-  export type FromElementOptions<T> = sigl.FromElementOptions<T>
 }
 
 export default $

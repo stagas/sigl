@@ -21,6 +21,8 @@ import $ from '.'
 
 export type { Component, fromElement, Options as FromElementOptions }
 
+export type { ContextClass, EffectOptions, FluentFx, Fx, RefProxy, Refs }
+
 export type LifecycleEvents = {
   mounted: CustomEvent
   unmounted: CustomEvent

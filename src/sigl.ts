@@ -1,6 +1,5 @@
 import { Class, CustomElementConstructor, Narrow, StringKeys } from 'everyday-types'
 import { render } from 'html-vdom'
-import { fromElement } from 'html-vdom/from-element'
 import { FluentCapture, Getter } from 'proxy-toolkit'
 import { Fluent } from 'to-fluent'
 
@@ -13,7 +12,6 @@ import { State, StateEventKeys } from './state'
 import $ from '.'
 
 export * from 'event-toolkit'
-export * from 'html-vdom/from-element'
 export * from 'nested-css'
 export { pipeInto as mix } from 'ts-functional-pipe'
 
@@ -29,7 +27,7 @@ export type Mixin<T extends CustomElementConstructor = CustomElementConstructor>
 
 export type { HTMLAttributes, VRef } from 'html-vdom'
 
-export type { Component, FromElementOptions } from './element'
+export type { Component } from './element'
 
 export type Element<T, U = object> =
   & HTMLElement
@@ -45,7 +43,7 @@ export type Element<T, U = object> =
 
 export type ChildOf<T> = Omit<T, keyof Omit<Element<any>, keyof HTMLElement>>
 
-export { ContextClass, element, fromElement, render, State }
+export { ContextClass, element, render, State }
 
 export type {
   Class,
