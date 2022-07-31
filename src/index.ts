@@ -65,6 +65,8 @@ namespace $ {
   export type StateInstance = sigl.StateInstance
   export type Super<T = any, U = object> = sigl.Super<T, U>
   export type Task = sigl.Task
+  export type fromElement = typeof sigl.fromElement
+  export type FromElementOptions<T> = sigl.FromElementOptions<T>
 }
 
 export default $
