@@ -19,6 +19,8 @@ import { RefProxy, Refs } from './refs'
 
 import $ from '.'
 
+export type { Component }
+
 export type LifecycleEvents = {
   mounted: CustomEvent
   unmounted: CustomEvent

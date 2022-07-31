@@ -1,6 +1,6 @@
 import { Class, CustomElementConstructor, Narrow, StringKeys } from 'everyday-types'
 import { render } from 'html-vdom'
-import { fromElement } from 'html-vdom/from-element'
+import { Component, fromElement } from 'html-vdom/from-element'
 import { FluentCapture, Getter } from 'proxy-toolkit'
 import { Fluent } from 'to-fluent'
 
@@ -27,6 +27,7 @@ export * from './util'
 
 export type Mixin<T extends CustomElementConstructor = CustomElementConstructor> = T
 
+export type { Component }
 export type { HTMLAttributes, VRef } from 'html-vdom'
 
 export type Element<T, U = object> =
