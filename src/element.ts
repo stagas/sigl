@@ -19,7 +19,7 @@ import { RefProxy, Refs } from './refs'
 
 import $ from '.'
 
-export type { Component }
+export type { Component, fromElement, Options as FromElementOptions }
 
 export type LifecycleEvents = {
   mounted: CustomEvent
