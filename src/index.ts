@@ -5,6 +5,7 @@ import { EventKeys } from 'everyday-types'
 import * as sigl from './sigl'
 
 export * from 'everyday-types'
+export * from 'geometrik'
 export * from './element'
 
 const $ = Object.assign(sigl._, sigl, {
