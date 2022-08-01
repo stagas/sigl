@@ -103,7 +103,7 @@
     "everyday-utils": "^1.0.0",
     "geometrik": "^0.0.1",
     "get-element-offset": "^1.0.1",
-    "html-vdom": "^2.2.2",
+    "html-vdom": "^2.2.3",
     "is-mobile-agent": "^0.0.1",
     "nested-css": "^3.0.7",
     "proxy-toolkit": "^0.1.0",
