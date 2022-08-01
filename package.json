@@ -3,7 +3,7 @@
   "author": "stagas",
   "short": "stagas/sigl",
   "description": "Web framework",
-  "version": "0.0.9",
+  "version": "1.0.0",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -96,17 +96,17 @@
     "vite-open": "^3.0.1"
   },
   "dependencies": {
-    "animatrix": "^0.0.2",
+    "animatrix": "^1.0.0",
     "argtor": "^1.0.4",
     "event-toolkit": "^1.0.1",
     "everyday-types": "^1.0.0",
     "everyday-utils": "^1.0.0",
-    "geometrik": "^0.0.1",
+    "geometrik": "^1.0.0",
     "get-element-offset": "^1.0.1",
     "html-vdom": "^2.2.3",
-    "is-mobile-agent": "^0.0.1",
+    "is-mobile-agent": "^1.0.0",
     "nested-css": "^3.0.7",
-    "proxy-toolkit": "^0.1.0",
+    "proxy-toolkit": "^1.0.0",
     "to-fluent": "^2.1.1",
     "ts-functional-pipe": "3.1.2"
   }
