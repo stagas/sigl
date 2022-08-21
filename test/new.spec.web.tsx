@@ -1,3 +1,5 @@
+/** @env browser */
+
 /** @jsxImportSource ../src */
 
 import { tick } from 'everyday-utils'

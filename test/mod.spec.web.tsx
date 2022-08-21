@@ -1,3 +1,5 @@
+/** @env browser */
+
 /** @jsxImportSource ../src */
 
 import $ from '../src'

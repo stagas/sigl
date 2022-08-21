@@ -1,3 +1,5 @@
+/** @env browser */
+
 import { ContextClass } from '../src/context'
 
 describe('Context', () => {
