@@ -30,7 +30,7 @@ export type LifecycleEvents = {
 
 export interface JsxContext<T> {
   render: FluentFx<T, JSX.Element, void>
-  part: FluentFx<T, JSX.Element, () => JSX.Element>
+  part: FluentFx<T, JSX.Element, () => JSX.Element, JSX.Element>
   ref: Refs<T>
 }
 
@@ -234,7 +234,7 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
           render(result, this.root ?? (this.root = $.shadow(this)))
           //!? 'render', this, result
           return false
-        })
+        }) as any
 
         this.$.part = toFluent(
           EffectOptions<this>,

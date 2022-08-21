@@ -27,7 +27,7 @@ export type FxFn<T, R> = (deps: Deps<Attrs<T>>) => R
 export type CtxFn<T, R> = (ctx: T) => R
 export type FxRet<R> = Promise<R> | (() => Promise<R>) | R | void
 
-export type FluentFx<T, R, U> = Fluent<(fn: FxFn<T, R>) => U, Required<EffectOptions<T>>>
+export type FluentFx<T, R, U, D = void> = Fluent<(fn: FxFn<T, R>, def: D) => U, Required<EffectOptions<T>>>
 
 export type OffEffect = () => Promise<void>
 
