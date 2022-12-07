@@ -1,9 +1,12 @@
+import { QueueOptions } from 'event-toolkit'
 import { toFluent } from 'to-fluent'
 
-export class PropertySettings {
+export class PropertySettings extends QueueOptions {
   attr = false
+  clone = false
+  compare?: ((oldValue: any, newValue: any) => boolean) | null
+  is?: PropertyKind | undefined
   out = false
-  is?: PropertyKind
 }
 
 export type PropertyMap = Map<string, PropertySettings>
@@ -36,5 +39,7 @@ export const prop = toFluent(
 )
 
 export const attr = prop.attr
-export const out = prop.out
+export const clone = prop.clone
+export const compare = prop.compare
 export const is = prop.is
+export const out = prop.out

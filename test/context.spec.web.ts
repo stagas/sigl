@@ -3,8 +3,8 @@
 import { ContextClass } from '../src/context'
 
 describe('Context', () => {
-  describe('reduce', () => {
-    it('capture active reducer target', () => {
+  describe('fulfill', () => {
+    it('works', () => {
       const target = {
         foo: void 0 as number | void,
         dep: void 0 as number | void,

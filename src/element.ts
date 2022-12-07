@@ -1,3 +1,4 @@
+import { wrapQueue } from 'event-toolkit'
 import type {
   Class,
   CustomElementConstructor,
@@ -8,20 +9,46 @@ import type {
 } from 'everyday-types'
 import { defineProperty, entries, getOwnProperty, omit, pick } from 'everyday-utils'
 import { Hook, hook, render } from 'html-vdom'
-import { Component, fromElement, Options } from 'html-vdom/from-element'
+import { Component, ComponentProps, fromElement, Options } from 'html-vdom/from-element'
 import { toFluent } from 'to-fluent'
 
 import { applyAttrs, attrListener, AttrTypes } from './attrs'
-import { ContextClass, EffectOptions, FluentFx, Fx, FxFn } from './context'
+import { Context, ContextClass, EffectOptions, FluentFx, Fx, FxFn } from './context'
 import { PropertySettings, protoPropertyMap } from './decorators'
 import { Events } from './events'
 import { RefProxy, Refs } from './refs'
 
 import $ from '.'
 
-export type { Component, fromElement, Options as FromElementOptions }
+export type { Component, ComponentProps, fromElement, Options as FromElementOptions }
 
 export type { ContextClass, EffectOptions, FluentFx, Fx, RefProxy, Refs }
+
+export type ElementContext<T = any, U = object> = {
+  host: T
+  $: Context<T & JsxContext<T> & typeof $>
+  context: ContextClass<T & JsxContext<T> & typeof $>
+  mounted?(ctx: $.Element<T, U>['$']): void
+  created?(ctx: $.Element<T, U>['$']): void
+  debug?: boolean
+  preventUnmount: boolean
+  toJSON(): Pick<T, StringKeys<T>>
+}
+
+export type ChildOf<T> = Omit<T, keyof Omit<Element, keyof HTMLElement>>
+
+export type PropsOf<T> = Omit<T, keyof Element<HTMLElement>>
+
+export type Element<T = any, U = object> =
+  & HTMLElement
+  & Events<T, LifecycleEvents & U>
+  & ElementContext<T, U>
+
+export type ElementClass = CustomElementConstructor & {
+  elementOptions?: Options<any>
+  attributeKeys?: string[]
+  propertyMap?: Map<string, PropertySettings>
+}
 
 export type LifecycleEvents = {
   mounted: CustomEvent
@@ -34,20 +61,15 @@ export interface JsxContext<T> {
   ref: Refs<T>
 }
 
-export type ElementClass = CustomElementConstructor & {
-  elementOptions?: Options<any>
-  attributeKeys?: string[]
-  propertyMap?: Map<string, PropertySettings>
-}
-
 export function element<T extends HTMLElement, I = HTMLElement>(
   Element: Class<T>,
   options?: Options<I>,
+  defaultProps?: ComponentProps<T, I>
 ): Component<T, I>
 export function element<I = HTMLElement>(options?: Options<I>): <T extends CustomElementConstructor>(superclass: T) => T
 export function element(): <T extends CustomElementConstructor>(superclass: T) => T
-export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, options?: Options<any>) {
-  if (typeof ctorOrOptions === 'function') return fromElement(ctorOrOptions, options)
+export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, options?: Options<any>, defaultProps?: ComponentProps<any, any>) {
+  if (typeof ctorOrOptions === 'function') return fromElement(ctorOrOptions, options, defaultProps)
   if (typeof ctorOrOptions === 'object') options = ctorOrOptions
   return (superclass: any) => {
     const parent = superclass as ElementClass
@@ -84,12 +106,36 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
       }
 
       static get propertyMap() {
-        return new Map([...ownPropertyMap, ...(super.propertyMap ?? [])])
+        const mergedPropertyMap = new Map<string, PropertySettings>()
+        for (const [key, superSettings] of (super.propertyMap ?? [])) {
+          if (ownPropertyMap.has(key)) {
+            const mergedSettings = Object.assign(
+              {},
+              superSettings,
+              ownPropertyMap.get(key), // own settings override super's
+            )
+            mergedPropertyMap.set(key, mergedSettings)
+          } else {
+            mergedPropertyMap.set(key, superSettings)
+          }
+        }
+        for (const [key, ownSettings] of ownPropertyMap) {
+          if (!mergedPropertyMap.has(key)) {
+            mergedPropertyMap.set(key, ownSettings)
+          }
+        }
+        return mergedPropertyMap
       }
 
       static get exposedPropertyKeys() {
         return [...ctor.propertyMap]
           .filter(([, settings]) => settings.out)
+          .map(([key]) => key) as StringKeys<InstanceType<typeof ctor>>[]
+      }
+
+      static get clonedPropertyKeys() {
+        return [...ctor.propertyMap]
+          .filter(([, settings]) => settings.out && settings.clone)
           .map(([key]) => key) as StringKeys<InstanceType<typeof ctor>>[]
       }
 
@@ -102,6 +148,7 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
       declare root?: ShadowRoot
 
       isMounted = false
+      preventUnmount = false
       declare context: ContextClass<this> & JsxContext<this>
       declare onmounted: EventHandler<this, CustomEvent>
       declare onunmounted: EventHandler<this, CustomEvent>
@@ -113,21 +160,41 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
 
       declare _ctor: Class<any>
 
+      declare debug?: boolean
+
+      // debug = true
+
       constructor(...args: any[]) {
         super(...args)
         this.#isMain = new.target === ctor
         if (this.#isMain) {
           defineProperty.not.enumerable(this, '_ctor', ctor)
+
+          if (this.debug) {
+            console.groupCollapsed('CREATE', this.constructor.name)
+          }
+
           this.#create()
           Object.assign(this, args[0])
-          queueMicrotask(() => {
+
+          this.context.tailQueue.add(() => {
             this.#flushAttributeUpdates()
           })
+
+          if (this.debug) {
+            console.groupEnd()
+          }
         }
       }
 
       toJSON() {
-        return pick(this, ctor.exposedPropertyKeys)
+        const json: any = pick(this, ctor.exposedPropertyKeys)
+        ctor.clonedPropertyKeys.forEach((key) => {
+          json[key] = Array.isArray(json[key])
+            ? [...json[key]]
+            : { ...json[key] }
+        })
+        return json as Pick<this, StringKeys<this>>
       }
 
       // goto://context.ts#ContextClass.createMemory
@@ -157,17 +224,17 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
           const type = value == null
             ? AttrTypes.get(String)
             : AttrTypes.get(value as unknown as ValueConstructor)
-              ?? (valueCtor
-                ? AttrTypes.get(valueCtor as ValueConstructor)
+            ?? (valueCtor
+              ? AttrTypes.get(valueCtor as ValueConstructor)
                   /**
                    * if the inputs own class prototype implements toString
                    * then we can use that as the string attribute as
                    * the middleware will perform a .toString()
                    * goto://attrs.ts#AttrTypes
                    */ ?? (Object.hasOwn(valueCtor.prototype, 'toString')
-                    ? AttrTypes.get(String)
-                    : null)
+                ? AttrTypes.get(String)
                 : null)
+              : null)
           if (!type) {
             throw new TypeError(
               `Attribute "${key}" is not valid type, must be either: String, Number, Boolean, null, undefined`
@@ -194,24 +261,38 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
       }
 
       #registerChangeEvents() {
-        const keys = new Set(ctor.exposedPropertyKeys)
-        this.$.effect.keys(keys).task(() => {
+        const keys = new Set(ctor.exposedPropertyKeys) as Set<StringKeys<this>>
+        const changeTask = $.queue.task(() => {
           $.dispatch.composed(this.host, 'change')
         })
+        for (const key of keys) {
+          const settings = ctor.propertyMap.get(key)!
+          const fn = wrapQueue(settings)(changeTask as any) as any
+          this.$.effect.keys(new Set([key]))(fn)
+        }
       }
 
       #create() {
-        //!? 'creating', this
-
         // attach reactive context
         this.#attachReactiveContext()
+
+        let initial = true
+        this.context.setupScheduled()
 
         // attributes
         this.#applyAttributes()
 
         // listen for lifecycle events
         $.on(this.host).mounted(() => {
+          if (this.isMounted) return
+
           //!? 'mounted', this
+
+          if (initial) {
+            initial = false
+          } else {
+            this.context.setupScheduled()
+          }
 
           // we flush here as well as at the queue level
           // because it can be created and mounted before
@@ -221,11 +302,6 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
 
           // register 'change' events from @$.out() and @$.attr.out()
           this.#registerChangeEvents()
-        })
-
-        $.on(this.host).unmounted(() => {
-          //!? 'unmounted', this
-          this.$.cleanup()
         })
 
         // jsx render helpers
@@ -241,18 +317,21 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
           options =>
             (fn: FxFn<this, JSX.Element>, output?: JSX.Element) => {
               let update: Hook
+              const origin = this.context.debug ? [new Error()] : []
               const cb = (value: JSX.Element) => {
-                output = value
+                if (value !== void 0) output = value
                 //!? 'part', this, output
-                if (update) queueMicrotask(update)
+                // if (update) queueMicrotask(update)
+                if (update) this.$.tailQueue.add(update)
                 return false
               }
               const Fn = () => {
                 // lazily create effect when first used
-                if (!update)
+                if (!update) {
                   this.$.register(
-                    new Fx({ fn, cb, options, dispose: cb })
+                    new Fx({ fn, cb, options, origin, dispose: cb })
                   )
+                }
                 update = hook
                 return output
               }
@@ -263,11 +342,22 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
         this.$.ref = RefProxy(this.$)
 
         this.created?.(this.$)
+
+        $.on(this.host).unmounted(() => {
+          //!? 'unmounted', this
+          if (!initial) {
+            this.$.cleanup()
+          }
+        })
       }
 
       // based on: https://stackoverflow.com/a/49773201/175416
       dispatchEvent(this: any, event: Event) {
         const onEventType = `on${event.type}`
+
+        if (this.debug && this.#isMain) {
+          console.groupCollapsed(event.type.toUpperCase(), this.constructor.name)
+        }
 
         let pass = true
 
@@ -290,11 +380,17 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
         // run prototype <event>(context, event) listeners
         if (pass !== false) {
           const fn = getOwnProperty(super.constructor.prototype, event.type)
-          if (fn) pass = fn.call(this, this.$, event)
+          if (fn) {
+            pass = fn.call(this, this.$, event)
+          }
         }
 
         // propagate event if pass is remains true
         if (pass !== false) super.dispatchEvent(event)
+
+        if (this.debug && this.#isMain) {
+          console.groupEnd()
+        }
 
         return pass
       }
@@ -309,8 +405,8 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
         //!dir this
         super.connectedCallback?.()
         if (!this.isMounted) {
-          this.isMounted = true
           this.host.dispatch('mounted')
+          this.isMounted = true
         }
       }
 
@@ -328,7 +424,7 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
         // removed from the dom and not reconnected
         // immediately.
         queueMicrotask(() => {
-          if (!this.isConnected) {
+          if (!this.isConnected && !this.preventUnmount) {
             this.isMounted = false
             this.host.dispatch('unmounted')
           }
@@ -350,12 +446,16 @@ export function element(ctorOrOptions?: Class<HTMLElement> | Options<any>, optio
         //!warn 'attributeChangedCallback:', name, newValue
         let key: StringOf<keyof this>
         if (key = attrKeysMap.get(name) as StringOf<keyof this>) {
-          const { is } = ctor.propertyMap.get(key)!
+          const { is, compare } = ctor.propertyMap.get(key)!
           const prev = this.#attrData[key]
           const next = attrTypes.get(key)!(newValue) as unknown as this[StringOf<keyof this>]
 
           // type casting comparison for objects that serialize their attribute value
-          const isDifferent = is ? prev != next : !Object.is(prev, next)
+          const isDifferent = is
+            ? prev != next
+            : compare
+              ? !compare(prev, next)
+              : !Object.is(prev, next)
 
           //!? 'is different:', isDifferent, name, prev, next
           if (isDifferent) {

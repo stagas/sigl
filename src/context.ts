@@ -1,7 +1,8 @@
 import type { Fn, StringKeys, StringOf } from 'everyday-types'
 
+import { EventEmitter } from 'eventemitter-strict'
 import { argtor } from 'argtor'
-import { Off, onAll, QueueOptions, wrapQueue } from 'event-toolkit'
+import { chain, Off, onAll, queue, QueueOptions, wrapQueue } from 'event-toolkit'
 import { accessors, entries, fromEntries, pick, removeFromArray } from 'everyday-utils'
 import { bool, Fluent, toFluent } from 'to-fluent'
 
@@ -13,7 +14,8 @@ const REDUCER = Symbol()
 
 export class EffectOptions<T> extends QueueOptions {
   cb?: (value: any) => boolean | void
-  keys?: Set<keyof T>
+  keys?: Set<StringKeys<T>>
+  why = bool
   once = bool
   lock = bool
   isFulfillReducer = bool
@@ -23,7 +25,11 @@ export type Deps<T> = {
   [K in keyof T]-?: NonNullable<T[K]>
 }
 
-export type FxFn<T, R> = (deps: Deps<Attrs<T>>) => R
+export type FxDeps<T> = {
+  [K in keyof Attrs<T>]-?: NonNullable<Attrs<T>[K]>
+}
+
+export type FxFn<T, R> = (deps: FxDeps<T>) => R
 export type CtxFn<T, R> = (ctx: T) => R
 export type FxRet<R> = Promise<R> | (() => Promise<R>) | R | void
 
@@ -33,20 +39,23 @@ export type OffEffect = () => Promise<void>
 
 export interface FxDef<T, R = void | unknown> {
   fn: FxFn<T, FxRet<R>> | CtxFn<T, FxRet<R>>
-  cb?: (value: any) => boolean | void
-  keys?: Set<keyof T>
+  cb?: ((value: any) => boolean | void) | undefined
+  keys?: Set<StringKeys<T>>
   dispose?: (() => void) | null
   options?: EffectOptions<T>
+  origin?: Error[]
   initial?: R
 }
 
-export interface Fx<T, R = void | unknown> extends FxDef<T, R> {}
+export interface Fx<T, R = void | unknown> extends FxDef<T, R> { }
 
 export class Fx<T, R = void | unknown> {
   remove?: () => Promise<void>
   target?: keyof T
   values = {} as T
   pass?: boolean
+  origin: Error[] = []
+  originExtra?: Error[] | null
 
   constructor(fx: FxDef<T, R>) {
     Object.assign(this, fx)
@@ -55,23 +64,33 @@ export class Fx<T, R = void | unknown> {
 
 export type Context<T extends object> = T & ContextClass<T>
 
-let GlobalLock: any
+export let GlobalLock: any
 
-export class ContextClass<T extends object> {
+export interface ContextEvents {
+  update: (props: { origin: Error[], changedKeys: string[], f: Fx<any, any> }) => void
+  flush: () => void
+}
+
+export class ContextClass<T extends object> extends EventEmitter<ContextEvents> {
   private entries!: readonly [StringOf<keyof T>, T[keyof T]][]
   private mem!: Record<StringOf<keyof T>, T[keyof T]>
   private keys = new Set<StringOf<keyof T>>()
 
   private effects!: Map<keyof T | symbol, Fx<T>[]>
   private triggered = new Set<Fx<T>>()
+  tailQueue = new Set<Fn<any, any>>()
 
-  active?: Fx<T> | null
+  active: Fx<T, any>[] = []
   private reducer?: Fx<T>
 
   public $ = {} as Context<T>
 
-  private scheduled = new Set<{ key: keyof T; value?: [string, any[]]; captured?: FluentCapture }>()
-  private listeners = new Map<keyof T, [any, Off]>()
+  private scheduled = new Set<{
+    key: keyof T;
+    value?: [string, any[]];
+    captured?: FluentCapture
+  }>()
+  private fxListeners = new Map<keyof T, [any, Off]>()
 
   static attach<T extends object & { $?: Context<T>; context?: ContextClass<T> }>(target: T, extension: any = {}) {
     if (target.context instanceof ContextClass) {
@@ -81,31 +100,46 @@ export class ContextClass<T extends object> {
     //!? 'attach context to target', target
     target.context = new ContextClass(target)
 
-    // We are using mutate() to extend $ because at this point there are reactive effects
-    // that will trigger and depend on the $ object to be fulfilled, along with its extension.
-    // We pass the extension from the caller because we want to be environment agnostic and
-    // in the DOM context, the extension contains DOM initializers that don't exist in Workers
-    // and we want the context to be able to work in both environments.
+    // We are using mutate() to extend $ because at this point there are
+    // reactive effects that will trigger and depend on the $ object to be fulfilled,
+    // along with its extension. We pass the extension from the caller because we
+    // want to be environment agnostic and in the DOM context, the extension contains
+    // DOM initializers that don't exist in Workers and we want the context to be
+    // able to work in both environments.
     target.context.mutate(() => {
       target.$ = Object.assign(target.context!.$ as any, extension)
     })
   }
 
+  debug = false
+
   constructor(private target: T) {
+    super()
+    if ((this.target as any).debug || this.debug) {
+      this.debug = true
+      this.startDebugging()
+    }
     this.copyMethods()
     this.createMemory()
     this.createAccessors()
     this.cleanup()
+  }
+
+  setupScheduled() {
     for (const item of this.scheduled) {
       if (item.value) {
         const { key, value: [method, args] } = item
         this.$[key] = (this as any).$[method](...args)
       } else if (item.captured) {
         const { key, captured } = item
+        this._origin = captured.origin
         this.$[key] = applyFluentCapture(captured, (this as any).$)
+        this._origin = null
       }
     }
   }
+
+  _origin: any
 
   private copyMethods() {
     Object.assign(
@@ -117,18 +151,21 @@ export class ContextClass<T extends object> {
         'effect',
         'fulfill',
         'function',
+        'globalLock',
+        'lock',
         'mutate',
         'mutating',
+        'query',
         'reduce',
         'register',
         'render',
+        'tailQueue',
         'use',
         'using',
-        'query',
         'when',
         'with',
         'withLock',
-        'globalLock',
+        'withGlobalLock'
       ] as StringOf<keyof this>[])
     )
   }
@@ -161,7 +198,7 @@ export class ContextClass<T extends object> {
       return
     }
 
-    const [prev, off] = this.listeners.get(key) ?? []
+    const [prev, off] = this.fxListeners.get(key) ?? []
     if (prev === value) return
 
     //!? 'change listener', key
@@ -172,12 +209,12 @@ export class ContextClass<T extends object> {
     const runKeyEffects = () => {
       // clearing values so they retrigger for same reference
       this.clearKey(key) // try to run effects first by using the setters
-      ;(this.target as any)[key] = value
+        ; (this.target as any)[key] = value
       // and then manually
       this.runEffects(key)
     }
 
-    this.listeners.set(key, [
+    this.fxListeners.set(key, [
       value,
       onAll(value, event => {
         if (event.type === 'change') runKeyEffects()
@@ -199,7 +236,7 @@ export class ContextClass<T extends object> {
           console.error(this.target)
           throw new Error('Target is not an EventTarget')
         }
-        ;(this.target as EventTarget).dispatchEvent(newEvent as any)
+        ; (this.target as EventTarget).dispatchEvent(newEvent as any)
       }),
     ])
 
@@ -227,6 +264,8 @@ export class ContextClass<T extends object> {
     }))
   }
 
+  origins = new Map()
+
   private createAccessors() {
     //!? 'creating accessors'
     accessors(this.$, this.target, key => ({
@@ -236,6 +275,9 @@ export class ContextClass<T extends object> {
         if (v === REDUCER) {
           v = this.reducer!.initial
           this.reducer!.target = key
+          if (this.debug) {
+            this.origins.set(key, new Error())
+          }
           // if value is filled first time then return and don't use initial
           if (this.register(this.reducer!)) return
           if (v == null) return
@@ -251,10 +293,18 @@ export class ContextClass<T extends object> {
       set: v => {
         //!? 'context target setter:', key, v
         const prev = this.mem[key]
-        const isDifferent = !(Object.is(prev, v))
+        const settings = (this.target as any)._getPropertySettings?.(key)
+        const isDifferent = !(
+          settings?.compare
+            ? settings.compare(prev, v)
+            : Object.is(prev, v)
+        )
         //!? 'context target isDifferent', isDifferent, key, prev, v
         // if (key === 'presets') console.log('is different', isDifferent, key, v)
         if (isDifferent) {
+          if (this.debug) {
+            this.origins.set(key, new Error())
+          }
           this.mem[key] = v
           //!? this.effects.get(key)
           this.runEffects(key)
@@ -288,7 +338,17 @@ export class ContextClass<T extends object> {
     )
   }
 
+  // lastFlushTime = 0
+  // cleanupDebounceTimeout: any
   cleanup = () => {
+    // const diffTime = performance.now() - this.lastFlushTime
+    // if (!force && diffTime < 10000) {
+    //   console.warn('Debounced cleanup', this)
+    //   clearTimeout(this.cleanupDebounceTimeout)
+    //   this.cleanupDebounceTimeout = setTimeout(this.cleanup, diffTime + 10)
+    //   return
+    // }
+
     if (this.effects) {
       for (const fns of this.effects.values())
         fns.forEach(f => f.dispose?.())
@@ -300,7 +360,11 @@ export class ContextClass<T extends object> {
   }
 
   register = (f: Fx<T>) => {
-    f.keys = f.options?.keys ?? argtor(f.fn) as Set<keyof T>
+    if (this.debug) {
+      f.origin.push(new Error())
+    }
+
+    f.keys = f.options?.keys ?? new Set(argtor(f.fn)) as Set<StringKeys<T>>
 
     f.fn = wrapQueue(f.options)(f.fn as any) as any
 
@@ -342,41 +406,113 @@ export class ContextClass<T extends object> {
 
     f.pass ??= !f.keys!.size
 
+    const changedKeys: string[] = []
+
     for (const key of f.keys!) {
-      const value = this.target[key]
+      const value = this.target[key] as T[StringKeys<T>]
       if (value == null) {
         f.pass = false
         return true
       }
-      if (!(Object.is(f.values[key], value))) {
+
+      const settings = (this.target as any)._getPropertySettings?.(key)
+
+      const isDifferent = !(
+        settings?.compare
+          ? settings.compare(f.values[key], value)
+          : Object.is(f.values[key], value)
+      )
+
+      if (isDifferent) {
         f.values[key] = value
         f.pass = true
         changed = true
+        changedKeys.push(key)
       }
     }
+
+    if (f.options?.why) console.warn(f, changedKeys)
+
+    const origin = [
+      ...f.origin,
+      ...(f.originExtra ?? []),
+      ...changedKeys.map(key => this.origins.get(key))
+    ] as any
+
+    this.emit('update', { f, changedKeys, origin })
+
+    f.originExtra = null
 
     return changed
   }
 
-  private flush = () => {
-    const current = [...this.triggered] as any
-    this.triggered.clear()
-    current.forEach(this.run)
-  }
+  lastTasks = []
+  hasScheduledFlush = false
+  didFlushLast = false
+  private flush = queue.task.first.last.next(() => {
+    // this.lastFlushTime = performance.now()
+    this.didFlushLast = true
+    this.hasScheduledFlush = false
+
+    if (this.triggered.size) {
+      const tasks = [...this.triggered] as any
+      this.triggered.clear()
+      tasks.forEach(this.run)
+      // this.lastTasks.forEach((task: any) => {
+      //   if (this.triggered.has(task)) {
+      //     console.warn('Task tried to recurse:', task)
+      //     this.triggered.delete(task)
+      //   }
+      // })
+      // this.lastTasks = tasks
+    }
+    // TODO: should the tailqueue run before the next triggered series?
+
+    // if (this.triggered.size) {
+    //   queueMicrotask(this.flush)
+    // } else {
+    if (this.tailQueue.size) {
+      const tasks = [...this.tailQueue]
+      this.tailQueue.clear()
+      // queueMicrotask(() => {
+      tasks.forEach(fn => fn())
+      // })
+      // if (this.triggered.size) {
+      //   console.log('more!')
+      // }
+    }
+    // }
+
+    this.emit('flush')
+
+    // requestAnimationFrame(() => {
+    //   this.didFlushLast = false
+    // })
+    // if (this.triggered.size) {
+    //   queueMicrotask(this.flush)
+    // }
+
+    // }
+  })
 
   private run = (f: Fx<T>) => {
+    if (this.debug) {
+      f.originExtra ??= [new Error()]
+    }
+
     if (f.pass && f.options?.once) return
 
-    if (this.active || GlobalLock) {
-      if (f !== this.active) this.triggered.add(f)
+    if (this.active.length || GlobalLock) {
+      if (!this.active.includes(f)) this.triggered.add(f)
       GlobalLock?.add(this)
       return
     }
 
-    this.active = f
+    this.active.push(f)
+
+    f.dispose?.()
 
     if (this.update(f)) {
-      f.dispose?.()
       if (!f.pass) {
         f.values = {} as Deps<T>
         return this.complete()
@@ -387,7 +523,7 @@ export class ContextClass<T extends object> {
   }
 
   get _fulfill() {
-    const f = this.active
+    const f = this.active.at(-1)
     const key = f?.target
 
     if (f == null || key == null) {
@@ -400,7 +536,7 @@ export class ContextClass<T extends object> {
   }
 
   private finalize() {
-    const f = this.active!
+    const f = this.active.at(-1)!
     let result = (f.fn as CtxFn<T, Promise<unknown>>).call(this, f.values)
 
     if (f.options?.isFulfillReducer) {
@@ -408,15 +544,29 @@ export class ContextClass<T extends object> {
     }
 
     if (result?.then) {
-      result.then((res: any) => {
+      // f.dispose?.()
+      result.then((result: any) => {
+        f.dispose?.()
         try {
-          if (f.cb?.(res) === false) return
+          if (f.cb?.(result) === false) {
+            this.active.pop()
+            this.flush()
+            return
+          }
           if (f.target != null && !f.options?.isFulfillReducer) {
-            this.target[f.target] = res
+            this.target[f.target] = result
+          } else {
+            if (Array.isArray(result)) result = chain(result)
+            if (typeof result === 'function') {
+              f.dispose = () => {
+                ; (result as () => void)()
+                f.dispose = null
+              }
+            }
           }
         } finally {
           if (f.options?.lock) {
-            this.active = null
+            this.active.pop() // = null
             this.flush()
           }
         }
@@ -429,7 +579,7 @@ export class ContextClass<T extends object> {
         // }
       })
       if (!f.options?.lock) {
-        this.active = null
+        this.active.pop() // = null
         this.flush()
       }
       return true
@@ -439,33 +589,37 @@ export class ContextClass<T extends object> {
   }
 
   private complete = (result?: unknown) => {
-    const f = this.active!
+    const f = this.active.at(-1)!
 
+    // TODO: the nullish ?. shouldn't be needed here.
+    // for some reason this.active ends up null in some occassions.
+    // Probably has to do with the globalLock() hack or event handlers.
     if (!f.pass) {
-      this.active = null
+      this.active.pop() // = null
       this.flush()
       return
     }
 
     if (f.cb?.(result) === false) {
-      this.active = null
+      this.active.pop() // = null
       this.flush()
       return
     }
 
     if (f.target != null && !f.options?.isFulfillReducer) {
       this.target[f.target] = result as T[keyof T]
-      this.active = null
+      this.active.pop()
       this.flush()
       return true
     } else {
+      if (Array.isArray(result)) result = chain(result)
       if (typeof result === 'function') {
         f.dispose = () => {
-          result()
+          ; (result as () => void)()
           f.dispose = null
         }
       }
-      this.active = null
+      this.active.pop()
       this.flush()
     }
   }
@@ -475,7 +629,8 @@ export class ContextClass<T extends object> {
       fn: FxFn<T, R | Promise<R>>,
       initial?: FxDef<T, R>['initial'],
     ): R => {
-      this.reducer = new Fx({ fn, options, initial })
+      this.reducer = new Fx({ fn, options, initial, origin: [this._origin] })
+      this._origin = null
       return REDUCER as unknown as R
     })
 
@@ -485,7 +640,8 @@ export class ContextClass<T extends object> {
       initial?: FxDef<T, R>['initial'],
     ): R => {
       options.isFulfillReducer = true
-      this.reducer = new Fx({ fn, options, initial } as any)
+      this.reducer = new Fx({ fn, options, initial, origin: [this._origin] } as any)
+      this._origin = null
       return REDUCER as unknown as R
     })
 
@@ -518,13 +674,23 @@ export class ContextClass<T extends object> {
 
   function = <P extends unknown[], R>(fn: (ctx: T) => Fn<P, R>) => {
     const { withLock, target } = this
+    let _args: any[] = []
+    let _self: any = null
+    let _result: R
+    function inner() {
+      const cb = fn(target) as any
+      _result = cb.apply(_self, _args)
+    }
     function wrapped(this: any, ...args: any[]) {
-      let result!: R
-      withLock(() => {
-        const cb = fn(target) as any
-        result = cb.apply(this, args)
-      })
-      return result
+      // let result!: R
+      _self = this
+      _args = args
+      withLock(inner)
+      // () => {
+      //   const cb = fn(target) as any
+      //   result = cb.apply(this, args)
+      // })
+      return _result as R
     }
     return wrapped as unknown as Fn<P, R>
   }
@@ -557,12 +723,12 @@ export class ContextClass<T extends object> {
   query = <T extends HTMLElement>(sel: string): T => this.reduce(({ root }: any) => root.querySelector(sel)!)
 
   when = <T, P extends unknown[], R>(condition: unknown, cb: Fn<P, R>) =>
-    function(this: T, ...args: P) {
+    function (this: T, ...args: P) {
       if (condition) cb.apply(this, args)
     }
 
   withGlobalLock = (fn: () => void) => {
-    GlobalLock = new Set()
+    GlobalLock ??= new Set()
     try {
       fn()
     } catch (error) {
@@ -576,13 +742,59 @@ export class ContextClass<T extends object> {
   }
 
   withLock = (fn: () => void) => {
-    this.active = fn as any
+    // if (this.active) {
+    //   throw new Error('Already active')
+    // }
+    this.active.push(fn as any) // as any
     try {
       fn()
     } catch (error) {
       console.warn(error)
     }
-    this.active = null
+    this.active.pop()
     this.flush()
   }
+
+  lock = () => {
+    // if (this.active) {
+    //   throw new Error('Already active')
+    // }
+
+    this.active.push(Symbol() as any)
+    return () => {
+      this.active.pop() // = null
+      this.flush()
+    }
+  }
+
+  globalLock = () => {
+    GlobalLock ??= new Set()
+    return () => {
+      if (!GlobalLock) return
+      const items = [...GlobalLock]
+      GlobalLock = null
+      for (const item of items) {
+        item.flush()
+      }
+    }
+  }
+
+  startDebugging = () => {
+    const name = this.target.constructor.name
+    this.on('update', ({ origin, changedKeys }) => {
+      const atKey = origin.slice().reverse().map(x => x.stack).join('').match(/\[as (\w+)]/)?.[1]
+      console.groupCollapsed(name + ': ' + changedKeys.join(' ') + (atKey?.length && !changedKeys.includes(atKey) ? ` > ${atKey}` : ''))
+      for (const err of origin) {
+        // const obj = {} as any
+        // fetch(`/apply-sourcemaps?${encodeURIComponent(err.stack!)}`)
+        //   .then((res) => res.text())
+        //   .then((text) => { obj['>'] = text })
+        // console.log(obj)
+        console.log(err)
+      }
+
+      console.groupEnd()
+    })
+  }
+
 }

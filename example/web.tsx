@@ -4,7 +4,7 @@ import $ from '../src'
 
 // simple reactive element
 
-interface ZooElement extends $.Element<ZooElement> {}
+interface ZooElement extends $.Element<ZooElement> { }
 
 @$.element()
 class ZooElement extends HTMLElement {
@@ -34,13 +34,32 @@ const swimmable = $.mixin(superclass =>
   }
 )
 
+// a plain reactive class
+
+interface RxFoo extends $.Reactive<RxFoo> { }
+@$.reactive()
+class RxFoo {
+  // properties
+  result = 555
+
+  min = 100
+  max = 1000
+
+  // example reducers
+  scale = $(this).reduce(({ min, max }) => max - min)
+  normal = $(this).reduce(({ scale, min, result }) => (result - min) / scale)
+}
+
+const rx = new RxFoo()
+console.log(rx.normal)
+
 // an element with events
 
 interface FooEvents {
   jump: CustomEvent<{ height: number }>
 }
 
-interface FooElement extends $.Element<FooElement, FooEvents> {}
+interface FooElement extends $.Element<FooElement, FooEvents> { }
 
 @$.element()
 class FooElement extends $.mix(ZooElement, runnable, swimmable) {
@@ -51,7 +70,7 @@ class FooElement extends $.mix(ZooElement, runnable, swimmable) {
   @$.attr() color = 'blue'
   @$.attr() another = 123
   @$.attr() withCapital = true
-  @$.attr() notYet = Boolean
+  @$.attr() notYet = $.Boolean
 
   // properties
   result = 42
@@ -60,8 +79,10 @@ class FooElement extends $.mix(ZooElement, runnable, swimmable) {
   max = 1000
 
   // example reducers
-  scale: number = $(this).reduce(({ min, max }) => max - min)
+  scale = $(this).reduce(({ min, max }) => max - min)
   normal = $(this).reduce(({ scale, min, result }) => (result - min) / scale)
+
+  inverted = $(this).fulfill(({ normal }) => fulfill => fulfill(-normal), 0)
 
   // example callback that mutates state
   toggle = $(this).callback(({ $, withCapital }) => (() => {
@@ -84,7 +105,7 @@ class FooElement extends $.mix(ZooElement, runnable, swimmable) {
     $.onPointerDown = $.reduce(() =>
       $.queue.throttle(100)(_e => {
         //
-      }), _ => {})
+      }), _ => { })
 
     // mixins test
     $.effect(({
@@ -222,3 +243,22 @@ customElements.define('x-foo', FooElement)
 const foo = new FooElement()
 document.body.appendChild(foo)
 foo.setAttribute('color', 'red')
+
+interface BarElement extends $.Element<BarElement> { }
+
+@$.element()
+class BarElement extends $.inherit(FooElement) {
+}
+
+customElements.define('x-bar', BarElement)
+new BarElement()
+
+interface XElement extends $.Element<XElement> { }
+
+@$.element()
+class XElement extends $.mix(HTMLElement, $.mixins.observed()) {
+  @$.out() foo = 123
+}
+
+customElements.define('x-x', XElement)
+// new BarElement()

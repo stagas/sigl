@@ -1,13 +1,20 @@
-import { Class, CustomElementConstructor, Narrow, StringKeys } from 'everyday-types'
-import { render } from 'html-vdom'
+import { Class, CustomElementConstructor, Narrow, StringKeys, StringOf } from 'everyday-types'
+export type { Class, CustomElementConstructor, Narrow, StringKeys, StringOf, EventKeys, EventHandler, Target, ValuesOf } from 'everyday-types'
+
+export { render, render as renderDom, renderCache } from 'html-vdom'
+
 import { FluentCapture, Getter } from 'proxy-toolkit'
 import { Fluent } from 'to-fluent'
 
-import { Context, ContextClass, Deps, FxFn } from './context'
-import { element, ElementClass, JsxContext, LifecycleEvents } from './element'
+import { Context, ContextClass, Deps, FxDeps, FxFn } from './context'
+export { GlobalLock } from './context'
+
 import { Events } from './events'
 import * as ext from './extensions'
+
 import { State, StateEventKeys } from './state'
+export { State }
+export type { States } from './state'
 
 import $ from '.'
 
@@ -16,8 +23,8 @@ export * from 'nested-css'
 export { pipeInto as mix } from 'ts-functional-pipe'
 
 export * from 'geometrik'
-export { isMobileAgent as isMobile } from 'is-mobile-agent'
 export * from './decorators'
+export * from './dom-util'
 export * as mixins from './mixins'
 export * from './refs'
 export * from './slots'
@@ -25,54 +32,61 @@ export * from './util'
 
 export type Mixin<T extends CustomElementConstructor = CustomElementConstructor> = T
 
+export interface Positioned extends $.Element<Positioned> {
+  pos: $.Point
+  size: $.Point
+  rect: $.Rect
+}
+
 export type { HTMLAttributes, VRef } from 'html-vdom'
 
-export type { Component } from './element'
+export * from './element'
+export * from './reactive'
 
-export type Element<T, U = object> =
-  & HTMLElement
-  & Events<T, LifecycleEvents & U>
-  & {
-    host: T
-    $: Context<T & JsxContext<T> & Omit<typeof $, 'transition'>>
-    context: ContextClass<T & JsxContext<T> & Omit<typeof $, 'transition'>>
-    mounted?(ctx: $.Element<T, U>['$']): void
-    created?(ctx: $.Element<T, U>['$']): void
-    toJSON(): Pick<T, StringKeys<T>>
-  }
+import { AnimSettings } from 'animatrix'
+import { Element } from './element'
 
-export type ChildOf<T> = Omit<T, keyof Omit<Element<any>, keyof HTMLElement>>
+export type Reactive<T = any> = {
+  self: T
+  $: Context<T & typeof $>
+  context: ContextClass<T & typeof $>
+  created?(ctx: Reactive<T>['$']): void
+  destroy(): void
+  toJSON(): Pick<T, StringKeys<T>>
+}
 
-export { ContextClass, element, render, State }
+// export { ContextClass, element, render, State }
 
 export type {
-  Class,
   Context,
-  CustomElementConstructor,
   Deps,
-  ElementClass,
+  // ElementClass,
   Events,
+  FxDeps,
   FxFn,
-  JsxContext,
-  LifecycleEvents,
-  Narrow,
+  // JsxContext,
+  // LifecycleEvents,
 }
 
 export type StateInstance = State<any, any>
 
 export type CleanInstance<T> = Omit<
   T,
-  keyof Omit<Element<any>, 'id'>
+  keyof Omit<Element, 'id'> | keyof Reactive
 >
 
 export type CleanClass<T> = Class<CleanInstance<T>>
 
-export type Super<T = any, U = object> = Class<Element<T, U>>
+export type Super<T extends HTMLElement = any, U = object> = Class<Element<T, U>>
 
-export type Extensions<T extends Element<any>> = {
+export type DomExtensions<T extends Element<any> = any> = {
   shadow: (init?: ShadowRootInit | string, html?: string) => ShadowRoot
   slotted: Fluent<<U>(mapFn?: (el: U) => U | false | null | undefined) => U[] | U, Required<ext.SlottedSettings>>
-  state: <U extends { Idle: Narrow<U['Idle'], string> }>(stateEnum: U) =>
+  state: <U extends { Idle: Narrow<U['Idle'], string> }>(
+    stateEnum: U,
+    guard?: any,
+    AnimSettings?: Partial<{ [K in StringOf<U>]: AnimSettings }>,
+  ) =>
     & State<T, U>
     & Events<
       T,
@@ -82,14 +96,21 @@ export type Extensions<T extends Element<any>> = {
     >
 }
 
-export type Wrapper<T extends Element<any>> = Extensions<T> & Omit<T['$'], keyof Extensions<any>>
+export type ElementWrapper<T extends Element> = DomExtensions<T> & Omit<T['$'], keyof DomExtensions>
 
-export function _<T>(ctor: Class<T>): CleanClass<T>
-export function _<T extends Element<any>>(ctx: T | Class<T>): Wrapper<T>
-export function _<T extends Element<any>>(ctx: T | Class<T>) {
+export type ReactiveWrapper<T extends Reactive> = T['$']
+
+export function inherit<T>(ctor: Class<T>): CleanClass<T> {
+  return ctor as CleanClass<T>
+}
+
+export function _<T extends Class<T>>(ctor: T): CleanClass<T>
+export function _<T extends Element>(ctx: T): ElementWrapper<T>
+export function _<T extends Reactive>(ctx: T): ReactiveWrapper<T>
+export function _<T extends Element, U extends Reactive, V extends Class<any>>(ctx: T | U | Class<V>) {
   if (typeof ctx === 'function') {
-    return ctx as CleanClass<T>
-  } else {
+    return ctx as CleanClass<V>
+  } else if (ctx instanceof HTMLElement) {
     const c = ctx as unknown as { _scheduleProperty(key: string, ...args: any[]): symbol }
     const shadow = $.shadow.bind(null, ctx)
     const slotted = ext.slotted(c)
@@ -100,17 +121,26 @@ export function _<T extends Element<any>>(ctx: T | Class<T>) {
         case 'slotted':
           return slotted
         case 'state':
-          return (states: any) => new State(states)
+          return (states: any, guard: any, AnimSettings: any) => new State(states, guard, AnimSettings)
         default: {
           return FluentCapture()[key]
         }
       }
-    }) as Wrapper<T>
+    }) as ElementWrapper<T>
+  } else {
+    return Getter(key => {
+      switch (key) {
+        // case 'state':
+        //   return (states: any) => new State(states)
+        default: {
+          return FluentCapture()[key]
+        }
+      }
+    }) as ReactiveWrapper<U>
   }
 }
 
-export const mixin = <T>(
-  mixin: (superclass: CleanClass<object>) => Class<T>,
-) =>
-  <V extends object>(realsuperclass: CleanClass<V>) =>
-    element()(mixin(realsuperclass) as any) as unknown as CleanClass<T & V>
+export const mixin = <T>(mixin: (superclass: CleanClass<object>) => Class<T>) => {
+  return <V extends object>(realsuperclass: CleanClass<V>) =>
+    $.element()(mixin(realsuperclass) as any) as unknown as CleanClass<T & V>
+}

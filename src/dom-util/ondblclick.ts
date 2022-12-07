@@ -1,13 +1,14 @@
 import { chain, MouseButton, on } from 'event-toolkit'
 
-export const ondblclick = (el: HTMLElement | SVGElement | Window, cb: () => void, ms = 250) => {
+export const ondblclick = (el: HTMLElement | SVGElement | Window, cb: (event: PointerEvent, firstPath: EventTarget[]) => any, ms = 250) => {
   let prevTimestamp = 0
   const pointers = new Set<number>()
   const clear = (e: PointerEvent) => {
     pointers.delete(e.pointerId)
   }
+  let firstDownPath: EventTarget[]
   return chain(
-    on(el).pointerdown(e => {
+    on(el).pointerdown((e) => {
       if (!(e.buttons & MouseButton.Left)) return
 
       pointers.add(e.pointerId)
@@ -15,9 +16,9 @@ export const ondblclick = (el: HTMLElement | SVGElement | Window, cb: () => void
 
       if (e.timeStamp - prevTimestamp < ms) {
         e.stopPropagation()
-        cb()
-        return
+        return cb(e, firstDownPath)
       }
+      firstDownPath = e.composedPath()
       prevTimestamp = e.timeStamp
     }),
     on(window).pointerup(clear),

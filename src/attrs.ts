@@ -8,7 +8,7 @@ export type Attrs<T> = {
 }
 
 export const AttrTypes = new Map<ValueConstructor, (x: any) => string | number | boolean>([
-  [String, (x: any): string => x.toString()],
+  [String, (x: any): string => x?.toString()],
   [Number, (x: any): number => parseFloat(x)],
   [Boolean, (x: any): boolean => (x = x === false ? false : x != null)],
 ])
@@ -32,6 +32,7 @@ export const applyAttrs = <T extends object>(
         self.setAttribute(attr, '')
       } else {
         if (self.hasAttribute(attr)) {
+          // console.log(attr)
           self.removeAttribute(attr)
         } else {
           // if the attribute is initially in the class as = true
@@ -39,11 +40,12 @@ export const applyAttrs = <T extends object>(
           // then the removeAttribute() will not trigger
           // the attributeChangedCallback(), and the value will
           // stay at 'true' forever.
-          ;(data as any)[key] = false
+          ; (data as any)[key] = false
         }
       }
     } else {
       //!? 'setting', attr, value
+      // console.warn('setting', attr, value)
       self.setAttribute(attr, value)
     }
   }

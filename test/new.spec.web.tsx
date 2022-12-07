@@ -11,7 +11,7 @@ let id = 0
 describe('sigl', () => {
   describe('attrs', () => {
     it('cast number', () => {
-      interface Foo extends $.Element<Foo> {}
+      interface Foo extends $.Element<Foo> { }
       @$.element()
       class Foo extends HTMLElement {
         @$.attr() another = 123
@@ -24,7 +24,7 @@ describe('sigl', () => {
     })
 
     it('delayed boolean', () => {
-      interface Foo extends $.Element<Foo> {}
+      interface Foo extends $.Element<Foo> { }
       @$.element()
       class Foo extends HTMLElement {
         @$.attr() flag = $.Boolean
@@ -38,7 +38,7 @@ describe('sigl', () => {
   })
 
   it('works', () => {
-    interface Foo extends $.Element<Foo, FooEvents> {}
+    interface Foo extends $.Element<Foo, FooEvents> { }
 
     interface FooEvents {
       jump: CustomEvent<{ height: number }>
@@ -138,7 +138,7 @@ describe('sigl', () => {
 
     let listenerCalled = 0
 
-    interface Bar extends $.Element<Bar> {}
+    interface Bar extends $.Element<Bar> { }
 
     @$.element()
     class Bar extends HTMLElement {
@@ -156,7 +156,7 @@ describe('sigl', () => {
       }
     }
 
-    interface Foo extends $.Element<Foo> {}
+    interface Foo extends $.Element<Foo> { }
 
     let seen = 0
 
@@ -164,7 +164,7 @@ describe('sigl', () => {
     let childSeen = 0
 
     @$.element()
-    class Foo extends $(Bar) {
+    class Foo extends $.inherit(Bar) {
       observed = true
       // constructor(is) {
       //   super(true)
@@ -282,7 +282,7 @@ describe('sigl', () => {
   })
 
   it('prop reducers', async () => {
-    interface Foo extends $.Element<Foo> {}
+    interface Foo extends $.Element<Foo> { }
 
     @$.element()
     class Foo extends HTMLElement {
@@ -306,7 +306,7 @@ describe('sigl', () => {
   })
 
   it('mixins', async () => {
-    interface Foo extends $.Element<Foo> {}
+    interface Foo extends $.Element<Foo> { }
 
     const order: string[] = []
 
@@ -346,10 +346,10 @@ describe('sigl', () => {
   })
 
   it('constructor state argument', async () => {
-    interface Foo extends $.Element<Foo> {}
+    interface Foo extends $.Element<Foo> { }
 
     @$.element()
-    class Foo extends $(HTMLElement) {
+    class Foo extends $.inherit(HTMLElement) {
       value = 123
     }
 
@@ -360,7 +360,7 @@ describe('sigl', () => {
   })
 
   it('refs', async () => {
-    interface Foo extends $.Element<Foo> {}
+    interface Foo extends $.Element<Foo> { }
 
     @$.element()
     class Foo extends HTMLElement {
@@ -378,12 +378,12 @@ describe('sigl', () => {
   })
 
   it('ref map', async () => {
-    interface ButtonElement extends $.Element<ButtonElement> {}
+    interface ButtonElement extends $.Element<ButtonElement> { }
     @$.element()
-    class ButtonElement extends $(HTMLElement) {}
+    class ButtonElement extends $.inherit(HTMLElement) { }
     const Button = $.element(ButtonElement)
 
-    interface Foo extends $.Element<Foo> {}
+    interface Foo extends $.Element<Foo> { }
 
     let count = 0
 
@@ -458,10 +458,10 @@ describe('sigl', () => {
   // })
 
   it('serializing', async () => {
-    interface Foo extends $.Element<Foo> {}
+    interface Foo extends $.Element<Foo> { }
 
     @$.element()
-    class Foo extends $(HTMLElement) {
+    class Foo extends $.inherit(HTMLElement) {
       @$.out() value = 123
     }
 
@@ -475,9 +475,9 @@ describe('sigl', () => {
   })
 
   it('serializing ref map', async () => {
-    interface BarElement extends $.Element<BarElement> {}
+    interface BarElement extends $.Element<BarElement> { }
     @$.element()
-    class BarElement extends $(HTMLElement) {
+    class BarElement extends $.inherit(HTMLElement) {
       @$.attr.out() value = 0
       root = this
       mounted($: this['$']) {
@@ -487,7 +487,7 @@ describe('sigl', () => {
 
     let count = 0
 
-    interface Foo extends $.Element<Foo> {}
+    interface Foo extends $.Element<Foo> { }
     @$.element()
     class Foo extends HTMLElement {
       Bar = $.element(BarElement)
@@ -533,7 +533,7 @@ describe('sigl', () => {
       Handle: 'handle',
     } as const
 
-    interface FooElement extends $.Element<FooElement, FooEvents> {}
+    interface FooElement extends $.Element<FooElement, FooEvents> { }
 
     let mountedState: any
 

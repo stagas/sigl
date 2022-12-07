@@ -10,6 +10,7 @@ export class TransitionSettings {
   expireAfter = 0
   locked = bool
   pop = bool
+  idle = bool
   drop = bool
 }
 
@@ -39,23 +40,27 @@ export class Transition<U extends States, V = U[keyof U]> extends EventTarget {
       ?? this.AnimSettings[this.state.states.Idle as StringOf<V>]) as AnimSettings
   }
 
-  #resetMode(cb?: () => void) {
+  #resetMode(cb?: (() => void) | null, toIdle?: boolean) {
     clearTimeout(this.#resetModeTimeout)
     this.#resetModeTimeout = setTimeout(() => {
       requestAnimationFrame(() => {
         this.#dropExpireTime = 0
         if (!this.state.isIdle) {
-          this.state.pop(this.state.current)
+          if (toIdle) {
+            this.state.returnToIdle()
+          } else {
+            this.state.pop(this.state.current)
+          }
         }
         if (cb) requestAnimationFrame(cb)
       })
-    }, this.AnimSettings[this.state.current as StringOf<V>]?.duration || 200)
+    }, (this.AnimSettings[this.state.current as StringOf<V>]?.duration || 50) + 175)
   }
 
   #setMode(settings: TransitionSettings, mode: StringOf<V>, cb?: () => void) {
     const now = performance.now()
 
-    if (mode === this.state.states.Idle) this.#resetMode(cb)
+    if (mode === this.state.states.Idle) this.#resetMode(cb, settings.idle)
     else {
       this.#modeExpireTime = now
         + (settings.expireAfter
@@ -66,18 +71,20 @@ export class Transition<U extends States, V = U[keyof U]> extends EventTarget {
       if (settings.locked) this.#locked = true
 
       if (mode !== this.state.current) {
+        // TODO: this needs to be atomic
         requestAnimationFrame(() => {
-          if (!this.state.isIdle) {
-            this.state.swap(mode)
-          } else {
-            this.state.push(mode)
-          }
+          this.state.pushOrSwap(mode)
+          // if (!this.state.isIdle) {
+          //   this.state.swap(mode)
+          // } else {
+          //   this.state.push(mode)
+          // }
           if (cb) requestAnimationFrame(cb)
-          if (settings.pop) this.#resetMode()
+          if (settings.pop) this.#resetMode(null, settings.idle)
         })
       } else {
         cb?.()
-        if (settings.pop) this.#resetMode()
+        if (settings.pop) this.#resetMode(null, settings.idle)
       }
     }
   }
@@ -117,7 +124,7 @@ export class Transition<U extends States, V = U[keyof U]> extends EventTarget {
   }
 
   toString() {
-    return this.state.current as V
+    return this.state.current as any
   }
 }
 

@@ -8,7 +8,7 @@ let id = 99
 
 describe('sigl', () => {
   it('works', () => {
-    interface Foo extends $.Element<Foo, FooEvents> {}
+    interface Foo extends $.Element<Foo, FooEvents> { }
 
     interface FooEvents {
       jump: CustomEvent<{ height: number }>
@@ -58,8 +58,8 @@ describe('sigl', () => {
 
     customElements.define('x-foo', Foo)
     const foo = new Foo()
-    foo.onmounted = () => {}
-    foo.host.onmounted = () => {}
+    foo.onmounted = () => { }
+    foo.host.onmounted = () => { }
     foo.onjump
     foo.host.onjump
     foo.button
@@ -108,7 +108,7 @@ describe('sigl', () => {
 
     let listenerCalled = 0
 
-    interface Bar extends $.Element<Bar> {}
+    interface Bar extends $.Element<Bar> { }
 
     @$.element()
     class Bar extends HTMLElement {
@@ -126,7 +126,7 @@ describe('sigl', () => {
       }
     }
 
-    interface Foo extends $.Element<Foo> {}
+    interface Foo extends $.Element<Foo> { }
 
     let seen = 0
 
@@ -134,7 +134,7 @@ describe('sigl', () => {
     let childSeen = 0
 
     @$.element()
-    class Foo extends $(Bar) {
+    class Foo extends $.inherit(Bar) {
       observed = true
       // constructor(is) {
       //   super(true)

@@ -16,12 +16,12 @@ export const nodesToText = (nodes: Node[] | null) =>
 
 export type Slotted = { nodes: Node[]; elements: Element[]; firstChild?: Element }
 
-export const slotted = (slots: HTMLSlotElement[]): Slotted => ({
+export const slotted = (slots: HTMLSlotElement[], options?: AssignedNodesOptions): Slotted => ({
   get nodes() {
-    return slots.map(slot => slot.assignedNodes()).flat(Infinity) as Node[]
+    return slots.map(slot => slot.assignedNodes(options)).flat(Infinity) as Node[]
   },
   get elements() {
-    return slots.map(slot => slot.assignedElements()).flat(Infinity) as Element[]
+    return slots.map(slot => slot.assignedElements(options)).flat(Infinity) as Element[]
   },
   get firstChild() {
     return this.elements[0]
@@ -32,7 +32,8 @@ export const onSlotChange = <T extends ShadowRoot | HTMLSlotElement>(
   el: T,
   cb: (slotted: Slotted) => void,
   fn: (el: T) => HTMLSlotElement[] = el => el instanceof HTMLSlotElement ? [el] : [...el.querySelectorAll('slot')],
-) => on(el, 'slotchange' as any)(() => cb(slotted(fn(el))))
+  options?: AssignedNodesOptions,
+) => on(el, 'slotchange' as any)(() => cb(slotted(fn(el), options)))
 
 export const onTextChange = <T extends ShadowRoot | HTMLSlotElement>(
   el: T,
