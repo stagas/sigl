@@ -27,7 +27,7 @@ exports[`sigl serializing ref map 1`] = `
             \\"foo\\",
             {
               \\"$r\\": 4,
-              \\"$t\\": \\"Object\\",
+              \\"$t\\": \\"BarElement\\",
               \\"$v\\": {
                 \\"value\\": 123
               }
@@ -41,7 +41,7 @@ exports[`sigl serializing ref map 1`] = `
             \\"bar\\",
             {
               \\"$r\\": 6,
-              \\"$t\\": \\"Object\\",
+              \\"$t\\": \\"BarElement\\",
               \\"$v\\": {
                 \\"value\\": 456
               }
